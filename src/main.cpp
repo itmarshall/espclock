@@ -131,6 +131,7 @@ const uint8_t FONT[] = {0x7E, // 0
                         0x00  // (blank)
                         };
 
+// The states that the clock may be in.
 typedef enum {
     INITIALISING,
     RUNNING,
@@ -145,6 +146,7 @@ typedef enum {
     MENU_TYPE
 } state_t;
 
+// The setting values for the alarm.
 typedef enum {
     DISABLED,
     WEEKDAYS,
@@ -152,6 +154,7 @@ typedef enum {
     TOMORROW
 } alarm_t;
 
+// The configuration for the clock.
 typedef struct {
     uint32_t alarmTime;
     alarm_t alarmStatus;
@@ -197,9 +200,17 @@ Button myButton(ENCODER_SW_PIN);
 
 // Flag to indicate that the button has been pressed.
 // This allows us to differentiate single and double clicks.
-boolean myIsPressed = false;
+boolean myWasPressed = false;
 
-/* Sends debugging information to the server via UDP.
+// Flag to indicate that the button has been held long enough to register as a
+// long press.
+boolean myIsLongPress = false;
+
+/*
+ * Sends debugging information to the server via UDP.
+ * 
+ * @param format The "printf" formatting string.
+ * @param ... The values to be used when referenced from the format string.
  */
 void debug_printf(const char *format, ...) {
     char buf[64];
@@ -234,7 +245,8 @@ void debug_printf(const char *format, ...) {
     }
 }
 
-/* Callback used when the NTP time has been updated.
+/* 
+ * Callback used when the NTP time has been updated.
  */
 void ntp_time_received_cb() {
     time_t now = time(nullptr);
@@ -250,6 +262,11 @@ void ntp_time_received_cb() {
     }
 }
 
+/*
+ * Sends a command to the MAX7219/7221 LED driver chip.
+ * 
+ * @param command The 16-bit command to send to the LED driver.
+ */
 void led_command(uint16_t command) {
     //debug_printf("LED command: %04x.\n", command);
 
@@ -263,13 +280,21 @@ void led_command(uint16_t command) {
     digitalWrite(LED_CS_PIN, HIGH);
 }
 
-/* Sets the brightness of the LED display.
+/*
+ * Sets the brightness of the LED display.
+ * 
+ * @param brightness The new brightness value [0-15].
  */
 void set_brightness(uint8_t brightness) {
     led_command(0x0A00 | (brightness & 0x0F));
 }
 
-/* Copies the configuration data from one structure to another.
+/* 
+ * Copies the configuration data from one structure to another.
+ * 
+ * @param dest Pointer to the configuration into which the values are copied.
+ * @param src The configuration from which the values are sorced.
+ * @return Pointer to the destination structure.
  */
 flash_config_t *copy_config(flash_config_t *dest, const flash_config_t src) {
     dest->alarmTime = src.alarmTime;
@@ -283,7 +308,8 @@ flash_config_t *copy_config(flash_config_t *dest, const flash_config_t src) {
     return dest;
 }
 
-/* Compares two configuration structures, returning true if they match.
+/* 
+ * Compares two configuration structures, returning true if they match.
  *
  * @param a The first structure to test.
  * @param b The second structure to test.
@@ -303,6 +329,9 @@ bool compare_config(flash_config_t a, flash_config_t b) {
     }
 }
 
+/*
+ * Enters the configuration menu.
+ */
 void enter_menu() {
     myState = state_t::MENU_ALARM_MINUTES;
     copy_config(&myNewConfiguration, myNewConfiguration);
@@ -311,6 +340,9 @@ void enter_menu() {
     myCountdownTimer = 0;
 }
 
+/*
+ * Exits the configuration menu, saving the configuration if necessary.
+ */
 void exit_menu() {
     myState = state_t::RUNNING;
     myFlashCounter = -1;
@@ -328,10 +360,21 @@ void exit_menu() {
     }
 }
 
+/*
+ * Sends the values for the 4 7-segment LED displays to the LED driver chip.
+ * 
+ * @param farLeft The value for the first 7-segment display on the far left.
+ * @param middleLeft The value for the second 7-segment display on the left of
+ *                   middle.
+ * @param middleRight The value for the second 7-segment display on the right
+ *                    of middle.
+ * @param farRight The value for the first 7-segment display on the far right.
+ * @param colon Flag as to whether to show the : in the middle of the clock.
+ * @param pm Flag as to whether to show the LED for "PM".
+ * @param hundreds Flag as to whether to show the "hundreds" LED.
+ */
 void display(uint8_t farLeft, uint8_t middleLeft, uint8_t middleRight, uint8_t farRight, 
              bool colon = true, bool pm = false, bool hundreds = false) {
-    //debug_printf("Display: %02hhx, %02hhx, %02hhx, %02hhx.\n", dig0, dig1, dig2, dig3);
-    
     uint16_t dig0 = 0x0100 + FONT[farRight];
     uint16_t dig1 = 0x0200 + FONT[middleRight];
     uint16_t dig2 = 0x0300 + FONT[middleLeft];
@@ -361,6 +404,18 @@ void display(uint8_t farLeft, uint8_t middleLeft, uint8_t middleRight, uint8_t f
     led_command(dig4);
 }
 
+/*
+ * Displays the current time on the 7-segment LEDs.
+ * 
+ * @param hour The hour to be displayed.
+ * @param minute The minute to be displayed.
+ * @param showHour Flag used to control whether the hour should be shown - used
+ *                 in flashing.
+ * @param showMinute Flag used to control whether the minutes should be shown -
+ *                   used in flashing.
+ * @param show24Hour Flag used to control whether we're showing 12- or 24-hour
+ *                   hours.
+ */
 void display_time(uint8_t hour, 
                   uint8_t minute, 
                   bool showHour = true,
@@ -400,7 +455,8 @@ void display_time(uint8_t hour,
     display(digits[0], digits[1], digits[2], digits[3], true, !show24Hour && (hour >= 12));
 }
 
-/* Update the 7 segment displays, if necessary.
+/* 
+ * Update the 7 segment displays, if necessary.
  */
 void update_display() {
     time_t now;
@@ -575,10 +631,20 @@ void update_display() {
     myLastTimestamp = now;
 }
 
+/*
+ * Interrupt Service Routine (ISR) for updating the rotary encoder's value in
+ * response to the user rotating it.
+ */
 void ICACHE_RAM_ATTR rotaryTick() {
     myEncoder.tick();
 }
 
+/*
+ * Handles the user rotating the rotary encoder.
+ * 
+ * @param amount The number of detents that the encoder has been rotated.
+ *               Negative values are clockwise.
+ */
 void rotate(int32_t amount) {
     uint8_t hour;
     uint8_t minute;
@@ -682,6 +748,9 @@ void rotate(int32_t amount) {
     }
 }
 
+/*
+ * Handles the user clicking on the button in the rotary encoder.
+ */
 void click() {
     debug_printf("click.\n");
     switch (myState) {
@@ -726,6 +795,9 @@ void click() {
     myForceRedisplay = true;
 }
 
+/*
+ * Handles the user double-clicking on the button on the rotary encoder.
+ */
 void double_click() {
     debug_printf("double click.\n");
     switch (myState) {
@@ -753,6 +825,9 @@ void double_click() {
     }
 }
 
+/*
+ * Handles the expiry of the countdown timer.
+ */
 void countdown_expired() {
     debug_printf("countdown expired.\n");
     if (myState == state_t::SHOW_ALARM) {
@@ -762,6 +837,9 @@ void countdown_expired() {
     }
 }
 
+/*
+ * Setup routine run at power-on and reset times.
+ */
 void setup() {
 
     //Serial.begin(115200);
@@ -869,6 +947,9 @@ void setup() {
     debug_printf("Clock started successfully.\n");
 }
 
+/*
+ * Called continuously by the controller to execute the program.
+ */
 void loop() {
     // Handle any OTA updates.
     ArduinoOTA.handle();
@@ -910,20 +991,20 @@ void loop() {
     if (myButton.wasPressed()) {
         debug_printf("Button was pressed.\n");
         // Button has been pressed, but we need to check for click vs double-click.
-        if (myIsPressed) {
+        if (myWasPressed) {
             // This is the end of a double-click.
             double_click();
-            myIsPressed = false;
+            myWasPressed = false;
         } else {
             // This is either a single-click or the start of a double-click.
-            myIsPressed = true;
+            myWasPressed = true;
         }
     } 
-    if (myIsPressed) {
+    if (myWasPressed) {
         if (myButton.releasedFor(DOUBLE_CLICK_INTERVAL)) {
             // The double-click has timed out, so it's a click.
             click();
-            myIsPressed = false;
+            myWasPressed = false;
         }
     }
 
