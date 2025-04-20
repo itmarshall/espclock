@@ -18,6 +18,8 @@
 // Disables the writing to "EEPROM" (flash) for rapid testing/debugging.
 #define DISABLE_EEPROM_WRITES 1
 
+#define NOFLASH 1
+
 /*
  * Pin allocations:
  * Tx     / D1  - H -N/A-
@@ -61,6 +63,10 @@ const uint8_t BUZZER_PIN = 16;
 // starting the configuration server,
 const unsigned long CONFIG_TIMEOUT = 5 * 60;
 
+// The amount of time (in milliseconds) that the user has to hold a button for
+// before it is counted as a long press.
+const uint32_t LONG_PRESS_INTERVAL = 2000;
+
 // The amount of time (in milliseconds) to wait after a click for a 
 // double-click to be triggered.
 const uint32_t DOUBLE_CLICK_INTERVAL = 300;
@@ -70,6 +76,9 @@ const uint32_t LOOP_DELAY = 10;
 
 // The number of loops to go through before the show alarm state ends.
 const uint32_t SHOW_ALARM_COUNTDOWN = 3 * (1000 / LOOP_DELAY);
+
+// The number of loops to go through before the cancelled state ends.
+const uint32_t SHOW_CANCEL_COUNTDOWN = 3 * (1000 / LOOP_DELAY);
 
 // The number of loops before the flash value inverts.
 const uint32_t FLASH_COUNT_MAX = 0.5 * (1000 / LOOP_DELAY);
@@ -143,7 +152,8 @@ typedef enum {
     MENU_RADIO_FRACTION,
     MENU_12_24_HOURS,
     MENU_BRIGHTNESS,
-    MENU_TYPE
+    MENU_TYPE,
+    CANCELLED
 } state_t;
 
 // The setting values for the alarm.
@@ -334,7 +344,7 @@ bool compare_config(flash_config_t a, flash_config_t b) {
  */
 void enter_menu() {
     myState = state_t::MENU_ALARM_MINUTES;
-    copy_config(&myNewConfiguration, myNewConfiguration);
+    copy_config(&myNewConfiguration, myConfiguration);
     myFlashCounter = 0;
     myFlashValue = false;
     myCountdownTimer = 0;
@@ -342,21 +352,24 @@ void enter_menu() {
 
 /*
  * Exits the configuration menu, saving the configuration if necessary.
+ * 
+ * @param discardChanges Flag set when any changes should be ignored.
  */
-void exit_menu() {
+void exit_menu(boolean discardChanges = false) {
     myState = state_t::RUNNING;
     myFlashCounter = -1;
     myCountdownTimer = 0;
     myForceRedisplay = true;
-    if (!compare_config(myNewConfiguration, myNewConfiguration)) {
+    if (!discardChanges && 
+        !compare_config(myConfiguration, myNewConfiguration)) {
         // The configuration has changed.
         debug_printf("Configuration values changed.\n");
-        copy_config(&myNewConfiguration, myNewConfiguration);
+        copy_config(&myConfiguration, myNewConfiguration);
         #ifndef DISABLE_EEPROM_WRITES
         EEPROM.put(0, myNewConfiguration);
         EEPROM.commit();
         #endif
-        set_brightness(myNewConfiguration.brightness);
+        set_brightness(myConfiguration.brightness);
     }
 }
 
@@ -375,6 +388,14 @@ void exit_menu() {
  */
 void display(uint8_t farLeft, uint8_t middleLeft, uint8_t middleRight, uint8_t farRight, 
              bool colon = true, bool pm = false, bool hundreds = false) {
+    debug_printf("display: %02x %02x %02x %02x c=%d pm=%d h=%d.\n",
+                 farLeft,
+                 middleLeft,
+                 middleRight,
+                 farRight,
+                 colon,
+                 pm,
+                 hundreds);
     uint16_t dig0 = 0x0100 + FONT[farRight];
     uint16_t dig1 = 0x0200 + FONT[middleRight];
     uint16_t dig2 = 0x0300 + FONT[middleLeft];
@@ -425,6 +446,7 @@ void display_time(uint8_t hour,
     //debug_printf("Displaying time %02hhu:%02hhu.\n", hour, minute);
 
     // Hour digits.
+    boolean pm = (hour >= 12);
     if (showHour) {
         if (!show24Hour) {
             hour %= 12;
@@ -452,7 +474,7 @@ void display_time(uint8_t hour,
         digits[3] = DIGIT_BLANK;
     }
 
-    display(digits[0], digits[1], digits[2], digits[3], true, !show24Hour && (hour >= 12));
+    display(digits[0], digits[1], digits[2], digits[3], true, !show24Hour && pm);
 }
 
 /* 
@@ -462,7 +484,8 @@ void update_display() {
     time_t now;
     tm *tm_val;
     switch (myState) {
-        case state_t::INITIALISING:
+        case state_t::INITIALISING: // Fall through
+        case state_t::CANCELLED:
                 display(DIGIT_DASH, DIGIT_DASH, DIGIT_DASH, DIGIT_DASH, false);
             break;
         case state_t::RUNNING:
@@ -541,88 +564,117 @@ void update_display() {
             break;
         case state_t::MENU_RADIO_WHOLE:
             // We're showing the radio frequency whole Hz.
-            if (myNewConfiguration.isUseRadio) {
-                if (myFlashValue) {
-                    display(myNewConfiguration.radioFrequency / 1000,
-                            (myNewConfiguration.radioFrequency / 100) % 10,
-                            (myNewConfiguration.radioFrequency / 10) % 10,
-                            myNewConfiguration.radioFrequency % 10,
-                            false,
-                            false,
-                            true);
+            if (myForceRedisplay) {
+                if (myNewConfiguration.isUseRadio) {
+                    if (myFlashValue) {
+                        display(myNewConfiguration.radioFrequency / 1000,
+                                (myNewConfiguration.radioFrequency / 100) % 10,
+                                (myNewConfiguration.radioFrequency / 10) % 10,
+                                myNewConfiguration.radioFrequency % 10,
+                                false,
+                                false,
+                                true);
+                    } else {
+                        display(DIGIT_BLANK,
+                                DIGIT_BLANK,
+                                DIGIT_BLANK,
+                                myNewConfiguration.radioFrequency % 10,
+                                false,
+                                false,
+                                true);
+                    }
+                } else if (myFlashValue) {
+                    display(DIGIT_R, 0x00, 0x0F, 0x0F, false);
                 } else {
-                    display(0x00,
-                            0x00,
-                            0x00,
-                            myNewConfiguration.radioFrequency % 10,
-                            false,
-                            false,
-                            true);
+                    display(DIGIT_BLANK, 
+                            DIGIT_BLANK, 
+                            DIGIT_BLANK,
+                            DIGIT_BLANK,
+                            false);
                 }
-            } else if (myFlashValue) {
-                display(DIGIT_R, FONT[0x00], FONT[0x0F], FONT[0x0F], false);
-            } else {
-                display(0x00, 0x00, 0x00, 0x00, false);
             }
             break;
         case state_t::MENU_RADIO_FRACTION:
             // We're showing the radio frequency fraction Hz.
-            if (myNewConfiguration.isUseRadio) {
-                if (myFlashValue) {
-                    display(myNewConfiguration.radioFrequency / 1000,
-                            (myNewConfiguration.radioFrequency / 100) % 10,
-                            (myNewConfiguration.radioFrequency / 10) % 10,
-                            myNewConfiguration.radioFrequency % 10,
-                            false,
-                            false,
-                            true);
+            if (myForceRedisplay) {
+                if (myNewConfiguration.isUseRadio) {
+                    if (myFlashValue) {
+                        display(myNewConfiguration.radioFrequency / 1000,
+                                (myNewConfiguration.radioFrequency / 100) % 10,
+                                (myNewConfiguration.radioFrequency / 10) % 10,
+                                myNewConfiguration.radioFrequency % 10,
+                                false,
+                                false,
+                                true);
+                    } else {
+                        display(myNewConfiguration.radioFrequency / 1000,
+                                (myNewConfiguration.radioFrequency / 100) % 10,
+                                (myNewConfiguration.radioFrequency / 10) % 10,
+                                DIGIT_BLANK,
+                                false,
+                                false,
+                                true);
+                    }
+                } else if (myFlashValue) {
+                    display(DIGIT_R, 0x00, 0x0F, 0x0F, false);
                 } else {
-                    display(myNewConfiguration.radioFrequency / 1000,
-                            (myNewConfiguration.radioFrequency / 100) % 10,
-                            (myNewConfiguration.radioFrequency / 10) % 10,
-                            0x00,
-                            false,
-                            false,
-                            true);
+                    display(DIGIT_BLANK, 
+                            DIGIT_BLANK, 
+                            DIGIT_BLANK,
+                            DIGIT_BLANK,
+                            false);
                 }
-            } else if (myFlashValue) {
-                display(DIGIT_R, FONT[0x00], FONT[0x0F], FONT[0x0F], false);
-            } else {
-                display(0x00, 0x00, 0x00, 0x00, false);
             }
             break;
         case state_t::MENU_12_24_HOURS:
-            if (myFlashValue) {
-                if (myNewConfiguration.is24Hour) {
-                    display(0x00, FONT[0x02], FONT[0x04], FONT[DIGIT_H]);
+            if (myForceRedisplay == true) {
+                if (myFlashValue) {
+                    if (myNewConfiguration.is24Hour) {
+                        display(DIGIT_BLANK, 0x02, 0x04, DIGIT_H, false);
+                    } else {
+                        display(DIGIT_BLANK, 0x01, 0x02, DIGIT_H, false);
+                    }
                 } else {
-                    display(0x00, FONT[0x01], FONT[0x02], FONT[DIGIT_H]);
+                    display(DIGIT_BLANK, 
+                            DIGIT_BLANK, 
+                            DIGIT_BLANK,
+                            DIGIT_BLANK,
+                            false);
                 }
-            } else {
-                display(0x00, 0x00, 0x00, 0x00, false);
             }
-
             break;
         case state_t::MENU_BRIGHTNESS:
-            if (myFlashValue) {
-                display(FONT[0x0B],
-                        FONT[DIGIT_R],
-                        FONT[DIGIT_I],
-                        FONT[myNewConfiguration.brightness % 0x10],
-                        false);
-            } else {
-                display(0x00, 0x00, 0x00, 0x00, false);
+            if (myForceRedisplay == true) {
+                if (myFlashValue) {
+                    display(0x0B,
+                            DIGIT_R,
+                            DIGIT_I,
+                            myNewConfiguration.brightness % 0x10,
+                            false);
+                } else {
+                    display(DIGIT_BLANK, 
+                            DIGIT_BLANK, 
+                            DIGIT_BLANK,
+                            DIGIT_BLANK,
+                            false);
+                }
             }
             break;
         case state_t::MENU_TYPE:
-            if (myFlashValue) {
-                display(FONT[DIGIT_L], 
-                        FONT[0x0E],
-                        FONT[0x0D],
-                        FONT[(myNewConfiguration.isLargeLED ? 0x01 : 0x02)],
-                        false);
-            } else {
-                display(0x00, 0x00, 0x00, 0x00, false);
+            if (myForceRedisplay == true) {
+                if (myFlashValue) {
+                    display(DIGIT_L, 
+                            0x0E,
+                            0x0D,
+                            (myNewConfiguration.isLargeLED ? 0x01 : 0x02),
+                            false);
+                } else {
+                    display(DIGIT_BLANK, 
+                            DIGIT_BLANK, 
+                            DIGIT_BLANK,
+                            DIGIT_BLANK,
+                            false);
+                }
             }
             break;
     }
@@ -648,8 +700,11 @@ void ICACHE_RAM_ATTR rotaryTick() {
 void rotate(int32_t amount) {
     uint8_t hour;
     uint8_t minute;
+    uint16_t freqWhole;
+    uint8_t freqFrac;
     amount *= -1;
-    debug_printf("rotate by %d.\n", amount);
+    debug_printf("rotate by %d in state %d.\n", amount, myState);
+    myForceRedisplay = true;
     switch (myState) {
         case state_t::MENU_ALARM_MINUTES:
             // Change the minute value for the alarm.
@@ -657,7 +712,6 @@ void rotate(int32_t amount) {
             minute = myNewConfiguration.alarmTime % 60;
             minute = (minute + amount + MINUTES_PER_HOUR) % MINUTES_PER_HOUR;
             myNewConfiguration.alarmTime = (hour * 60) + minute;
-            myForceRedisplay = true;
             break;
         case state_t::MENU_ALARM_HOURS:
             // Change the hour value for the alarm.
@@ -665,7 +719,6 @@ void rotate(int32_t amount) {
             minute = myNewConfiguration.alarmTime % 60;
             hour = (hour + amount + HOURS_PER_DAY) % HOURS_PER_DAY;
             myNewConfiguration.alarmTime = (hour * 60) + minute;
-            myForceRedisplay = true;
             break;
         case state_t::MENU_ALARM_DAYS:
             // Change the alarm enabled days.
@@ -699,51 +752,57 @@ void rotate(int32_t amount) {
                     }
                     break;
             }
-            myForceRedisplay = true;
             break;
         case state_t::MENU_RADIO_WHOLE:
             // Change the radio frequency whole digits.
-            if (myNewConfiguration.isUseRadio) {
-                uint8_t freqHz = myNewConfiguration.radioFrequency / 100;
-                freqHz += amount;
-                if (freqHz == (MAX_RADIO_FREQUENCY + 1)) {
-                    // We've just gone past the end of the spectrum, so radio off.
-                    myNewConfiguration.isUseRadio = false;
-                } else if (freqHz > MAX_RADIO_FREQUENCY) {
-                    // We've gone further past the end of the spectrum, wrap around.
-                    freqHz -= MAX_RADIO_FREQUENCY + 2;
-                    freqHz += MIN_RADIO_FREQUENCY;
-                } else if (freqHz == (MIN_RADIO_FREQUENCY - 1)) {
-                    // We've just gone past the start of the spectrum, so radio off.
-                    myNewConfiguration.isUseRadio = false;
-                } else if (freqHz <= MIN_RADIO_FREQUENCY) {
-                    // We've gone further past the start of the spectrum, wrap around.
-                    freqHz -= MIN_RADIO_FREQUENCY - 2;
-                    freqHz += MAX_RADIO_FREQUENCY;
-                }
-                myNewConfiguration.radioFrequency %= 100;
-                myNewConfiguration.radioFrequency += freqHz * 100;
-            } else {
-                myNewConfiguration.isUseRadio = true;
-                myNewConfiguration.radioFrequency %= 100;
-                if (amount > 0) {
-                    myNewConfiguration.radioFrequency += MIN_RADIO_FREQUENCY;
-                } else {
-                    myNewConfiguration.radioFrequency += MAX_RADIO_FREQUENCY;
-                }
+            freqWhole = myNewConfiguration.radioFrequency / 10;
+            freqFrac = myNewConfiguration.radioFrequency % 10;
+            freqWhole += amount;
+            debug_printf("New frequency: %d.\n", freqWhole);
+            myNewConfiguration.isUseRadio = true;
+            if (freqWhole == (MAX_RADIO_FREQUENCY + 1)) {
+                // We've just gone past the end of the spectrum, so radio off.
+                myNewConfiguration.isUseRadio = false;
+            } else if (freqWhole > MAX_RADIO_FREQUENCY + 10) {
+                // We are WAY past the end of the spectrum, reset to minimum.
+                freqWhole = MIN_RADIO_FREQUENCY + 1;
+            } else if (freqWhole > MAX_RADIO_FREQUENCY) {
+                // We've gone further past the end of the spectrum, wrap around.
+                freqWhole -= (MAX_RADIO_FREQUENCY - MIN_RADIO_FREQUENCY + 2);
+            } else if (freqWhole == (MIN_RADIO_FREQUENCY - 1)) {
+                // We've just gone past the start of the spectrum, so radio off.
+                myNewConfiguration.isUseRadio = false;
+            } else if (freqWhole < (MIN_RADIO_FREQUENCY - 10)) {
+                // We've gone WAY past the start of the spectrum, reset to maximum.
+                freqWhole = MAX_RADIO_FREQUENCY;
+            } else if (freqWhole <= MIN_RADIO_FREQUENCY) {
+                // We've gone further past the start of the spectrum, wrap around.
+                freqWhole += (MAX_RADIO_FREQUENCY - MIN_RADIO_FREQUENCY + 2);
             }
+            myNewConfiguration.radioFrequency = (freqWhole * 10) + freqFrac;
+            debug_printf("Final frequency: %ld.\n", myNewConfiguration.radioFrequency);
+            break;
+        case state_t::MENU_RADIO_FRACTION:
+            // Change the radio frequency fractional digit.
+            freqWhole = myNewConfiguration.radioFrequency / 10;
+            freqFrac = myNewConfiguration.radioFrequency % 10;
+            freqFrac = (freqFrac + amount + 10) % 10;
+            myNewConfiguration.radioFrequency = (freqWhole * 10) + freqFrac;
+            debug_printf("Frac: final frequency: %ld.\n", myNewConfiguration.radioFrequency);
             break;
         case state_t::MENU_12_24_HOURS:
             myNewConfiguration.is24Hour = !myNewConfiguration.is24Hour;
             break;
         case state_t::MENU_BRIGHTNESS:
-            myNewConfiguration.brightness = (myNewConfiguration.brightness + 1) % MAX_BRIGHTNESS;
+            myNewConfiguration.brightness = 
+                (myNewConfiguration.brightness + amount + MAX_BRIGHTNESS) % MAX_BRIGHTNESS;
             break;
         case state_t::MENU_TYPE:
             myNewConfiguration.isLargeLED = !myNewConfiguration.isLargeLED;
             break;
         default:
             // Do nothing.
+            myForceRedisplay = false;
             break;
     }
 }
@@ -791,6 +850,9 @@ void click() {
             // Menu is finished, back to running.
             exit_menu();
             break;
+        case state_t::CANCELLED:
+            myState = state_t::RUNNING;
+            break;
     }
     myForceRedisplay = true;
 }
@@ -826,12 +888,40 @@ void double_click() {
 }
 
 /*
+ * Handles the user long-pressing on the button on the rotary encoder.
+ * Long presses are used to cancel out of the menu.
+ */
+void long_press() {
+    debug_printf("long press.\n");
+    switch (myState) {
+        case state_t::MENU_ALARM_MINUTES:  // Fall-through
+        case state_t::MENU_ALARM_HOURS:    // Fall-through
+        case state_t::MENU_ALARM_DAYS:     // Fall-through
+        case state_t::MENU_RADIO_WHOLE:    // Fall-through
+        case state_t::MENU_RADIO_FRACTION: // Fall-through
+        case state_t::MENU_12_24_HOURS:    // Fall-through
+        case state_t::MENU_BRIGHTNESS:     // Fall-through
+        case state_t::MENU_TYPE:
+            // Exit the menu, discarding changes.
+            exit_menu(true);
+            myState = state_t::CANCELLED;
+            myCountdownTimer = SHOW_ALARM_COUNTDOWN;
+            myForceRedisplay = true;
+            break;
+        default:
+            // Do nothing.
+            break;
+    }
+}
+
+/*
  * Handles the expiry of the countdown timer.
  */
 void countdown_expired() {
     debug_printf("countdown expired.\n");
-    if (myState == state_t::SHOW_ALARM) {
-        // We've finished showing the alarm.
+    if ((myState == state_t::SHOW_ALARM) ||
+        (myState == state_t::CANCELLED)) {
+        // It's time to show the clock again.
         myState = state_t::RUNNING;
         myForceRedisplay = true;
     }
@@ -850,10 +940,11 @@ void setup() {
     if (EEPROM.percentUsed() >= 0) {
         EEPROM.get(0, myNewConfiguration);
     } else {
-        myConfiguration.alarmTime = 6 * 60;    // 6 AM
+        // There is no saved configuration - set defaults.
+        myConfiguration.alarmTime = 6 * 60;   // 6 AM
         myConfiguration.alarmStatus = alarm_t::DISABLED;
-        myConfiguration.radioFrequency = 9930; // Triple-J Perth
-        myConfiguration.brightness = 0x0F;     // Maximum brightness
+        myConfiguration.radioFrequency = 993; // Triple J Perth
+        myConfiguration.brightness = 0x0F;    // Maximum brightness
         myConfiguration.is24Hour = true;
         myConfiguration.isLargeLED = false;
         myConfiguration.isUseRadio = false;
@@ -865,6 +956,7 @@ void setup() {
 
     //Serial.println("Initialising SPI");
     SPI.begin();
+    SPI.setFrequency(100000L);
 
     //Serial.println("Initialising LED");
     led_command(0x0900); // Decode mode: no decode
@@ -955,6 +1047,7 @@ void loop() {
     ArduinoOTA.handle();
 
     // Update the flash counter.
+    #ifndef NOFLASH
     if (myFlashCounter >= 0) {
         myFlashCounter = (myFlashCounter + 1) % FLASH_COUNT_MAX;
         if (myFlashCounter == 0) {
@@ -964,6 +1057,9 @@ void loop() {
             myForceRedisplay = true;
         }
     }
+    #else
+        myFlashValue = true;
+    #endif
 
     // Update the coundown timer.
     if (myCountdownTimer > 0) {
@@ -988,19 +1084,31 @@ void loop() {
 
     // Read the top button.
     myButton.read();
-    if (myButton.wasPressed()) {
-        debug_printf("Button was pressed.\n");
-        // Button has been pressed, but we need to check for click vs double-click.
-        if (myWasPressed) {
-            // This is the end of a double-click.
-            double_click();
+    if (myButton.pressedFor(LONG_PRESS_INTERVAL)) {
+        // This is a long press.
+        if (!myIsLongPress) {
+            // Register it as a new long-press.
+            myIsLongPress = true;
             myWasPressed = false;
-        } else {
-            // This is either a single-click or the start of a double-click.
-            myWasPressed = true;
+            long_press();
         }
-    } 
-    if (myWasPressed) {
+    } else if (myButton.wasPressed()) {
+        debug_printf("Button was pressed.\n");
+        // See if the releasing of the button was from a long press.
+        if (myIsLongPress) {
+            myIsLongPress = false;
+        } else {
+            // Button has been pressed, but we need to check for click vs double-click.
+            if (myWasPressed) {
+                // This is the end of a double-click.
+                double_click();
+                myWasPressed = false;
+            } else {
+                // This is either a single-click or the start of a double-click.
+                myWasPressed = true;
+            }
+        }
+    } else if (myWasPressed) {
         if (myButton.releasedFor(DOUBLE_CLICK_INTERVAL)) {
             // The double-click has timed out, so it's a click.
             click();
