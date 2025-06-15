@@ -1,0 +1,261 @@
+h1 {
+    font-size: 22px;
+    color: var(--colour-header);
+    margin-left: 8px;
+}
+
+fieldset {
+    border-radius: 4px;
+    margin: 8px;
+    box-shadow: 4px 4px 8px 0 rgba(0,0,0,0.2);
+    min-width: 200px;
+    flex-grow: 1;
+}
+
+form {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+}
+
+input[type="number"],
+input[type="text"],
+input[type="time"],
+select {
+    background-color: white;
+    padding: 6px;
+    border: 1px solid var(--colour-border);
+    border-radius: 4px;
+}
+
+input[type="range"] {
+    width: 100%;
+}
+
+input[type="range"] + span {
+    align-self: center;
+    padding-left: 8px;
+}
+
+input[type="button"] {
+    color: white;
+    background-color: var(--colour-button);
+    padding: 8px 16px;
+    border: 1px solid var(--colour-button);
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+input[type="button"].DiscardButton {
+    background-color: var(--colour-discard-button);
+}
+
+input[disabled] {
+    cursor: not-allowed;
+}
+
+.ButtonBar {
+    margin-top: 12px;
+    margin-left: 8px;
+}
+
+.ButtonBar :not(:first-child) {
+    margin-left: 12px;
+}
+
+.Container {
+    display: grid;
+    grid-template-columns: 90px auto;
+    row-gap: 8px;
+}
+
+.Container input[type="number"],
+.Container input[type="text"],
+.Container input[type="time"],
+.Container select {
+    height: 32px;
+    padding: 6px;
+    box-sizing: border-box;
+    width: 100%;
+}
+
+input[type="range"] + span.RangeValue {
+    padding-left: 8px;
+    align-self: center;
+    min-width: 1.2em;
+}
+
+textarea {
+    width: calc(100% - 4px);
+}
+
+.Container label {
+    /* height: 32px; */
+    align-self: center;
+}
+
+.RadioContainer {
+    display: flex;
+    height: 32px;
+}
+
+.RadioContainer label {
+    margin-left: 4px;
+}
+
+.RadioContainer input[type="radio"]:first-child {
+    margin-left: 0;
+}
+
+.RadioContainer input[type="radio"]:not(first-child) {
+    margin-left: 8px;
+}
+
+.Container div {
+    align-content: center;
+}
+
+.TitleSpan {
+    display: flex;
+}
+
+.TitleSpan input {
+    margin: 0 8px; 
+}
+
+.Flex {
+    display: flex;
+    align-content: center;
+}
+
+.Hidden {
+    display: none;
+}
+
+.Footer {
+    position: relative;
+    float: right;
+    font-size: small;
+}
+
+input[type="button"].BackupButton {
+    background-color: var(--colour-backup-button);
+}
+
+.ModalBackground {
+    display: none;
+    position: fixed;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    overflow: auto;
+    background-color: var(--colour-modal-background);
+    align-items: center;
+    justify-content: center;
+}
+
+.ModalBackground.Show {
+    display: flex;
+}
+
+.Modal {
+    padding: 10px 20px;
+    border: 1px solid var(--colour-border);
+    border-radius: 5px;
+    width: 80%;
+    min-height: 200px;
+    max-height: 80vh;
+    overflow-y: auto;
+    background-color: var(--colour-modal);
+    box-shadow: 0 4px 8px 0 rgba(0,0,0,0.2), 0 6px 20px 0 rgba(0,0,0,0.19);
+}
+
+.ConfigurationContainer {
+    display: flex;
+    flex-direction: column;
+}
+
+.ConfigurationContainer input[type="button"] + input[type="button"] {
+    margin-left: 8px;
+}
+
+.notification {
+    border-radius: 4px;
+    color: white;
+    padding: 12px;
+    position: fixed;
+    top: 12px;
+    left: 50%;
+    transform: translate(-50%, 0);
+    visibility: hidden;
+}
+
+.notification.hide {
+    visibility: visible;
+    /* top: -20px; */
+    animation: slideOut2 0.5s;
+}
+
+.notification.show {
+    visibility: visible;
+    animation: slideIn 0.5s, slideOut 0.5s 9.5s;
+}
+
+.notification.success {
+    background-color: var(--colour-success);
+    border: 1px solid var(--colour-success-highlight);
+}
+
+.notification.error {
+    background-color: var(--colour-error);
+    border: 1px solid var(--colour-error-highlight);
+}
+
+#closeNotification {
+    padding-left: 8px;
+    cursor: pointer;
+}
+
+.notification.success #closeNotification {
+    color: var(--colour-success-highlight);
+}
+
+.notification.error #closeNotification {
+    color: var(--colour-error-highlight);
+}
+
+@keyframes slideIn {
+    from {top: -20px; opacity: 0;}
+    to {top: 12px; opacity: 1;}
+}
+
+@keyframes slideOut {
+    from {top: 12px; opacity: 1;}
+    to {top: -20px; opacity: 0;}
+}
+
+@keyframes slideOut2 {
+    from {top: 12px; opacity: 1;}
+    to {top: -20px; opacity: 0;}
+}
+
+:root {
+    --colour-header: #145ead;
+    --colour-border: #8e8e8e;
+    --colour-button: #145ead;
+    --colour-backup-button: #484848;
+    --colour-discard-button: #550000;
+    --colour-success: #007700;
+    --colour-success-highlight: #00aa00;
+    --colour-error: #770000;
+    --colour-error-highlight: #aa0000;
+    --colour-modal-background: rgba(0, 0, 0, 0.4);
+    --colour-modal: white;
+    /* --colour-table-stripe: #f4f4f4;
+    --colour-disabled-button: #56687b;
+    --colour-disabled-configuration-button: #cccccc;
+    --colour-checkbox: #145ead;
+    --colour-shadow: #dddddd;
+     */
+}

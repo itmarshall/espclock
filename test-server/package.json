@@ -1,0 +1,17 @@
+{
+  "name": "test-server",
+  "version": "1.0.0",
+  "description": "Test server stubbing the microcontroller code",
+  "main": "app.js",
+  "scripts": {
+    "dev": "nodemon app.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Ian Marshall",
+  "license": "GPL-2.0-or-later",
+  "dependencies": {
+    "body-parser": "^2.2.0",
+    "express": "^5.1.0",
+    "nodemon": "^3.1.10"
+  }
+}

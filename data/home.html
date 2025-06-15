@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>ESP Clock</title>
+        <meta charset="utf8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <link rel="stylesheet" href="style.css">
+        <link rel="icon" href="icons/favicon.png">
+        <link rel="icon" href="icons/favicon.ico" sizes="any" />
+        <link rel="icon" href="icons/favicon.svg" type="image/svg+xml" />
+        <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+        <link rel="manifest" href="icons/manifest.webmanifest" />
+    </head>
+    <body onload="setup();">
+        <script src="home.js"></script>
+        <h1> 
+            <span id="nameSpan" class="TitleSpan">
+                <span>Clock Configuration for</span>
+                <input type="text" name="deviceName" id="deviceName" maxlength="40">
+                <!-- <span>Configuration</span> -->
+            </span>
+        </h1>
+
+        <form>
+            <fieldset id = "alarm" class="Container">
+                <legend>Alarm</legend>
+
+                <label for="alarmTime">Time</label>
+                <input type="time" id="alarmTime" name="alarmTime"/>
+
+                <label for="alarmActivation">Active Days</label>
+                <select id="alarmActivation" name="alarmActivation">
+                    <option value="ALARM_DISABLED">Disabled</option>
+                    <option value="ONE_TIME">Once Only</option>
+                    <option value="WEEKDAYS">Weekdays</option>
+                    <option value="ALL_DAYS">Every Day</option>
+                </select>
+            </fieldset>
+            
+            <fieldset id="radioSettings" class="Container">
+                <legend>Radio</legend>
+
+                <label for="radioFrequency">Frequency</label>
+                <input type="number" id="radioFrequency" name="radioFrequency" min="88.0" max="107.9" step="0.1"/>
+
+                <label>Alarm Type</label>
+                <div class="RadioContainer">
+                    <input type="radio" id="useRadio" name="radioBuzzer">
+                    <label for="useRadio">Radio</label>
+    
+                    <input type="radio" id="useBuzzer" name="radioBuzzer">
+                    <label for="useBuzzer">Buzzer</label>
+                </div>
+            </fieldset>
+
+            <fieldset class="Container">
+                <legend>Display</legend>
+
+                <label for="brightness">Brightness</label>
+                <div class="Flex">
+                    <input type="range" name="brightness" id="brightness" min="1" max="15">
+                    <span id="brightnessValue" class="RangeValue">1</span>
+                </div>
+
+                <label>Clock Type</label>
+                <div class="RadioContainer">
+                    <input type="radio" id="twelveHour" name="clockType">
+                    <label for="twelveHour">12-hour</label>
+    
+                    <input type="radio" id="twentyFourHour" name="clockType">
+                    <label for="twentyFourHour">24-hour</label>
+                </div>
+            </fieldset>
+
+            <fieldset class="Container">
+                <legend>Location</legend>
+
+                <label for="latitude">Latitude</label>
+                <input type="number" name="latitude" id="latitude" min="-90.0" max="90.0">
+
+                <label for="longitude">Longitude</label>
+                <input type="number" name="longitude" id="longitude" min="-180.0" max="180.0">
+            </fieldset>
+
+            <fieldset class="Container">
+                <legend>Timezone</legend>
+
+                <label for="timezone">Name</label>
+                <input type="text" name="timezone" id="timezone" maxlength="20">
+
+                <label for="offset">Offset</label>
+                <input type="number" name="offset" id="offset" min="-12" max="12">
+            </fieldset>
+            
+            <fieldset class="Container">
+                <legend>Daytime Display</legend>
+
+                <label for="dayPattern">Type</label>
+                <select id="dayPattern" name="dayPattern">
+                    <option value="SOLID_COLOUR">Solid Colour</option>
+                    <option value="RAINBOW_DIGITS">Rainbow Digits</option>
+                    <option value="RAINBOW_SEGMENTS">Rainbow Segments</option>
+                    <option value="FLASHING">Flashing</option>
+                    <option value="PULSING">Pulsing</option>
+                </select>
+
+                <label for="dayColour">Colour</label>
+                <input type="color" id="dayColour" name="dayColour"/>
+            </fieldset>
+            
+            <fieldset class="Container">
+                <legend>Nighttime Display</legend>
+
+                <label for="nightPattern">Type</label>
+                <select id="nightPattern" name="nightPattern">
+                    <option value="SOLID_COLOUR">Solid Colour</option>
+                    <option value="RAINBOW_DIGITS">Rainbow Digits</option>
+                    <option value="RAINBOW_SEGMENTS">Rainbow Segments</option>
+                    <option value="FLASHING">Flashing</option>
+                    <option value="PULSING">Pulsing</option>
+                </select>
+
+                <label for="nightColour">Colour</label>
+                <input type="color" id="nightColour" name="nightColour"/>
+            </fieldset>
+            
+            <fieldset id="alarmDisplay" class="Container">
+                <legend>Alarm Display</legend>
+
+                <label for="alarmPattern">Type</label>
+                <select id="alarmPattern" name="alarmPattern">
+                    <option value="SOLID_COLOUR">Solid Colour</option>
+                    <option value="RAINBOW_DIGITS">Rainbow Digits</option>
+                    <option value="RAINBOW_SEGMENTS">Rainbow Segments</option>
+                    <option value="FLASHING">Flashing</option>
+                    <option value="PULSING">Pulsing</option>
+                </select>
+
+                <label for="alarmColour">Colour</label>
+                <input type="color" id="alarmColour" name="alarmColour"/>
+            </fieldset>
+        </form>
+        <div class="ButtonBar">
+            <input 
+                type="button"
+                id="save"
+                value="Save Configuration"
+                onclick="saveConfiguration();"/>
+            <input 
+                type="button"
+                id="discard"
+                class="DiscardButton"
+                value="Discard Changes"
+                onclick="loadConfiguration();"/>
+            <input 
+                type="button" 
+                id="cancel" 
+                class="BackupButton" 
+                value="Backup" 
+                onclick="showBackup()">
+        </div>
+
+        <div class="Footer">
+            <span>Version: </span><span id="version"></span>
+        </div>
+
+        <div id="modalBackground" class="ModalBackground">
+            <div id="configureModal" class="Modal">
+                <div id="backupConfiguration" class="Hidden ConfigurationContainer">
+                    <form>
+                        <textarea id="backupText" rows="20"></textarea>
+                    </form>
+                    <div class="ButtonBar">
+                        <input type="button" class="FixedWidthButton" value="Upload Backup" onclick="uploadBackupConfiguration()">
+                        <input type="button" class="FixedWidthButton" value="Cancel" onclick="hideBackup()">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="notification" class="notification">
+            <span id="notificationText">All good</span>
+            <span id="closeNotification" onclick="hideNotification()">&times;</span>
+        </div>
+    </body>
+</html>
